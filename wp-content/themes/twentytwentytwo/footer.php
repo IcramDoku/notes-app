@@ -1,6 +1,7 @@
-<p> This is footer.php! </p>
-
-<?php wp_footer(); ?>
-
+</div><!-- #content -->
+    <footer>
+        <p>&copy; <?php echo date("Y"); ?> <?php bloginfo('name'); ?></p>
+    </footer>
+    <?php wp_footer(); ?>
 </body>
 </html>

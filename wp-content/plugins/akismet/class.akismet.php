@@ -73,21 +73,8 @@ class Akismet {
 		add_filter( 'frm_akismet_values', array( 'Akismet', 'prepare_custom_form_values' ) );
 
 		// Fluent Forms
-		/*
-		 * The Fluent Forms  hook names were updated in version 5.0.0. The last version that supported
-		 * the original hook names was 4.3.25, and version 4.3.25 was tested up to WordPress version 6.1.
-		 *
-		 * The legacy hooks are fired before the new hooks. See
-		 * https://github.com/fluentform/fluentform/commit/cc45341afcae400f217470a7bbfb15efdd80454f
-		 *
-		 * The legacy Fluent Forms hooks will be removed when Akismet no longer supports WordPress version 6.1.
-		 * This will provide compatibility with previous versions of Fluent Forms for a reasonable amount of time.
-		 */
 		add_filter( 'fluentform_form_element_start', array( 'Akismet', 'output_custom_form_fields' ) );
 		add_filter( 'fluentform_akismet_fields', array( 'Akismet', 'prepare_custom_form_values' ), 10, 2 );
-		// Current Fluent Form hooks.
-		add_filter( 'fluentform/form_element_start', array( 'Akismet', 'output_custom_form_fields' ) );
-		add_filter( 'fluentform/akismet_fields', array( 'Akismet', 'prepare_custom_form_values' ), 10, 2 );
 
 		add_action( 'update_option_wordpress_api_key', array( 'Akismet', 'updated_option' ), 10, 2 );
 		add_action( 'add_option_wordpress_api_key', array( 'Akismet', 'added_option' ), 10, 2 );
@@ -108,11 +95,7 @@ class Akismet {
 		static $access_token = null;
 
 		if ( is_null( $access_token ) ) {
-			$request_args = array( 'api_key' => self::get_api_key() );
-
-			$request_args = apply_filters( 'akismet_request_args', $request_args, 'token' );
-
-			$response = self::http_post( self::build_query( $request_args ), 'token' );
+			$response = self::http_post( self::build_query( array( 'api_key' => self::get_api_key() ) ), 'token' );
 
 			$access_token = $response[1];
 		}
@@ -121,14 +104,7 @@ class Akismet {
 	}
 
 	public static function check_key_status( $key, $ip = null ) {
-		$request_args = array(
-			'key' => $key,
-			'blog' => get_option( 'home' ),
-		);
-
-		$request_args = apply_filters( 'akismet_request_args', $request_args, 'verify-key' );
-
-		return self::http_post( self::build_query( $request_args ), 'verify-key', $ip );
+		return self::http_post( Akismet::build_query( array( 'key' => $key, 'blog' => get_option( 'home' ) ) ), 'verify-key', $ip );
 	}
 
 	public static function verify_key( $key, $ip = null ) {
@@ -146,14 +122,7 @@ class Akismet {
 	}
 
 	public static function deactivate_key( $key ) {
-		$request_args = array(
-			'key' => $key,
-			'blog' => get_option( 'home' ),
-		);
-
-		$request_args = apply_filters( 'akismet_request_args', $request_args, 'deactivate' );
-
-		$response = self::http_post( self::build_query( $request_args ), 'deactivate' );
+		$response = self::http_post( Akismet::build_query( array( 'key' => $key, 'blog' => get_option( 'home' ) ) ), 'deactivate' );
 
 		if ( $response[1] != 'deactivated' )
 			return 'failed';
@@ -301,17 +270,7 @@ class Akismet {
 			}
 		}
 
-		/**
-		 * Filter the data that is used to generate the request body for the API call.
-		 *
-		 * @since 5.3.1
-		 *
-		 * @param array $comment An array of request data.
-		 * @param string $endpoint The API endpoint being requested.
-		 */
-		$comment = apply_filters( 'akismet_request_args', $comment, 'comment-check' );
-
-		$response = self::http_post( self::build_query( $comment ), 'comment-check' );
+		$response = self::http_post( Akismet::build_query( $comment ), 'comment-check' );
 
 		do_action( 'akismet_comment_check_response', $response );
 
@@ -328,10 +287,6 @@ class Akismet {
 
 		if ( isset( $response[0]['x-akismet-pro-tip'] ) )
 	        $commentdata['akismet_pro_tip'] = $response[0]['x-akismet-pro-tip'];
-
-		if ( isset( $response[0]['x-akismet-guid'] ) ) {
-			$commentdata['akismet_guid'] = $response[0]['x-akismet-guid'];
-		}
 
 		if ( isset( $response[0]['x-akismet-error'] ) ) {
 			// An error occurred that we anticipated (like a suspended key) and want the user to act on.
@@ -474,10 +429,6 @@ class Akismet {
 				if ( isset( self::$last_comment['akismet_pro_tip'] ) ) {
 					update_comment_meta( $comment->comment_ID, 'akismet_pro_tip', self::$last_comment['akismet_pro_tip'] );
 				}
-
-				if ( isset( self::$last_comment['akismet_guid'] ) ) {
-					update_comment_meta( $comment->comment_ID, 'akismet_guid', self::$last_comment['akismet_guid'] );
-				}
 			}
 		}
 	}
@@ -517,7 +468,7 @@ class Akismet {
 			}
 
 			// Prepared as strings since comment_id is an unsigned BIGINT, and using %d will constrain the value to the maximum signed BIGINT.
-			$format_string = implode( ', ', array_fill( 0, is_countable( $comment_ids ) ? count( $comment_ids ) : 0, '%s' ) );
+			$format_string = implode( ", ", array_fill( 0, count( $comment_ids ), '%s' ) );
 
 			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->comments} WHERE comment_id IN ( " . $format_string . " )", $comment_ids ) );
 			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->commentmeta} WHERE comment_id IN ( " . $format_string . " )", $comment_ids ) );
@@ -528,7 +479,7 @@ class Akismet {
 			}
 
 			clean_comment_cache( $comment_ids );
-			do_action( 'akismet_delete_comment_batch', is_countable( $comment_ids ) ? count( $comment_ids ) : 0 );
+			do_action( 'akismet_delete_comment_batch', count( $comment_ids ) );
 		}
 
 		if ( apply_filters( 'akismet_optimize_table', ( mt_rand(1, 5000) == 11), $wpdb->comments ) ) // lucky number
@@ -558,7 +509,7 @@ class Akismet {
 				do_action( 'akismet_batch_delete_count', __FUNCTION__ );
 			}
 
-			do_action( 'akismet_delete_commentmeta_batch', is_countable( $comment_ids ) ? count( $comment_ids ) : 0 );
+			do_action( 'akismet_delete_commentmeta_batch', count( $comment_ids ) );
 		}
 
 		if ( apply_filters( 'akismet_optimize_table', ( mt_rand(1, 5000) == 11), $wpdb->commentmeta ) ) // lucky number
@@ -642,14 +593,7 @@ class Akismet {
 		return 0;
 	}
 
-	/**
-	 * Get the full comment history for a given comment, as an array in reverse chronological order.
-	 * Each entry will have an 'event', a 'time', and possible a 'message' member (if the entry is old enough).
-	 * Some entries will also have a 'user' or 'meta' member.
-	 *
-	 * @param int $comment_id The relevant comment ID.
-	 * @return array|bool An array of history events, or false if there is no history.
-	 */
+	// get the full comment history for a given comment, as an array in reverse chronological order
 	public static function get_comment_history( $comment_id ) {
 		$history = get_comment_meta( $comment_id, 'akismet_history', false );
 		if ( empty( $history ) || empty( $history[ 0 ] ) ) {
@@ -688,10 +632,6 @@ class Akismet {
 		$history[] = array( 'time' => 445856425, 'event' => 'status-spam', 'user' => 'sam' );
 		$history[] = array( 'time' => 445856426, 'event' => 'status-hold', 'user' => 'sam' );
 		$history[] = array( 'time' => 445856427, 'event' => 'status-approve', 'user' => 'sam' );
-		$history[] = array( 'time' => 445856427, 'event' => 'webhook-spam' );
-		$history[] = array( 'time' => 445856427, 'event' => 'webhook-ham' );
-		$history[] = array( 'time' => 445856427, 'event' => 'webhook-spam-noaction' );
-		$history[] = array( 'time' => 445856427, 'event' => 'webhook-ham-noaction' );
 		*/
 		
 		usort( $history, array( 'Akismet', '_cmp_time' ) );
@@ -758,9 +698,7 @@ class Akismet {
 		if ( self::is_test_mode() )
 			$c['is_test'] = 'true';
 
-		$c = apply_filters( 'akismet_request_args', $c, 'comment-check' );
-
-		$response = self::http_post( self::build_query( $c ), 'comment-check' );
+		$response = self::http_post( Akismet::build_query( $c ), 'comment-check' );
 
 		if ( ! empty( $response[1] ) ) {
 			return $response[1];
@@ -830,17 +768,6 @@ class Akismet {
 		if ( get_comment_meta( $comment->comment_ID, 'akismet_rechecking' ) )
 			return;
 		
-		if ( function_exists( 'getallheaders' ) ) {
-			$request_headers = getallheaders();
-
-			foreach ( $request_headers as $header => $value ) {
-				if ( strtolower( $header ) == 'x-akismet-webhook' ) {
-					// This change is due to a webhook request.
-					return;
-				}
-			}
-		}
-
 		// Assumption alert:
 		// We want to submit comments to Akismet only when a moderator explicitly spams or approves it - not if the status
 		// is changed automatically by another plugin.  Unfortunately WordPress doesn't provide an unambiguous way to
@@ -933,9 +860,7 @@ class Akismet {
 			$comment->comment_post_modified_gmt = $post->post_modified_gmt;
 		}
 
-		$comment = apply_filters( 'akismet_request_args', $comment, 'submit-spam' );
-
-		$response = self::http_post( self::build_query( $comment ), 'submit-spam' );
+		$response = Akismet::http_post( Akismet::build_query( $comment ), 'submit-spam' );
 
 		update_comment_meta( $comment_id, 'akismet_user_result', 'true' );
 
@@ -993,9 +918,7 @@ class Akismet {
 			$comment->comment_post_modified_gmt = $post->post_modified_gmt;
 		}
 
-		$comment = apply_filters( 'akismet_request_args', $comment, 'submit-ham' );
-
-		$response = self::http_post( self::build_query( $comment ), 'submit-ham' );
+		$response = self::http_post( Akismet::build_query( $comment ), 'submit-ham' );
 
 		update_comment_meta( $comment_id, 'akismet_user_result', 'false' );
 
@@ -1228,7 +1151,6 @@ class Akismet {
 
 	// return a comma-separated list of role names for the given user
 	public static function get_user_roles( $user_id ) {
-		$comment_user = null;
 		$roles = false;
 
 		if ( !class_exists('WP_User') )
@@ -1237,7 +1159,7 @@ class Akismet {
 		if ( $user_id > 0 ) {
 			$comment_user = new WP_User( $user_id );
 			if ( isset( $comment_user->roles ) )
-				$roles = implode( ',', $comment_user->roles );
+				$roles = join( ',', $comment_user->roles );
 		}
 
 		if ( is_multisite() && is_super_admin( $user_id ) ) {
@@ -1245,7 +1167,7 @@ class Akismet {
 				$roles = 'super_admin';
 			} else {
 				$comment_user->roles[] = 'super_admin';
-				$roles = implode( ',', $comment_user->roles );
+				$roles = join( ',', $comment_user->roles );
 			}
 		}
 
@@ -1484,7 +1406,7 @@ class Akismet {
 			$prefix = '_wpcf7_ak_';
 		}
 
-		$fields .= '<p style="display: none !important;" class="akismet-fields-container" data-prefix="' . esc_attr( $prefix ) . '">';
+		$fields .= '<p style="display: none !important;">';
 		$fields .= '<label>&#916;<textarea name="' . $prefix . 'hp_textarea" cols="45" rows="8" maxlength="100"></textarea></label>';
 
 		if ( ! function_exists( 'amp_is_request' ) || ! amp_is_request() ) {
@@ -1504,11 +1426,6 @@ class Akismet {
 	}
 
 	public static function output_custom_form_fields( $post_id ) {
-		if ( 'fluentform/form_element_start' === current_filter() && did_action( 'fluentform_form_element_start' ) ) {
-			// Already did this via the legacy filter.
-			return;
-		}
-
 		// phpcs:ignore WordPress.Security.EscapeOutput
 		echo self::get_akismet_form_fields();
 	}
@@ -1534,11 +1451,6 @@ class Akismet {
 	 * @return array $form
 	 */
 	public static function prepare_custom_form_values( $form, $data = null ) {
-		if ( 'fluentform/akismet_fields' === current_filter() && did_filter( 'fluentform_akismet_fields' ) ) {
-			// Already updated the form fields via the legacy filter.
-			return $form;
-		}
-
 		if ( is_null( $data ) ) {
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
 			$data = $_POST;
@@ -1605,7 +1517,7 @@ p {
 	public static function view( $name, array $args = array() ) {
 		$args = apply_filters( 'akismet_view_arguments', $args, $name );
 		
-		foreach ( $args as $key => $val ) {
+		foreach ( $args AS $key => $val ) {
 			$$key = $val;
 		}
 		
@@ -1680,7 +1592,6 @@ p {
 	}
 
 	public static function pre_check_pingback( $method ) {
-		$pingback_args = array();
 		if ( $method !== 'pingback.ping' )
 			return;
 
@@ -1705,7 +1616,7 @@ p {
 
 			if ( 0 === $call_count ) {
 				// Only pass along the number of entries in the multicall the first time we see it.
-				$multicall_count = is_countable( $wp_xmlrpc_server->message->params ) ? count( $wp_xmlrpc_server->message->params ) : 0;
+				$multicall_count = count( $wp_xmlrpc_server->message->params );
 			}
 
 			/*
@@ -1892,44 +1803,5 @@ p {
 		}
 
 		return $return_value;
-	}
-
-	/**
-	 * Was the last entry in the comment history created by Akismet?
-	 *
-	 * @param int $comment_id The ID of the comment.
-	 * @return bool
-	 */
-	public static function last_comment_status_change_came_from_akismet( $comment_id ) {
-		$history = self::get_comment_history( $comment_id );
-
-		if ( empty( $history ) ) {
-			return false;
-		}
-
-		$most_recent_history_event = $history[0];
-
-		if ( ! isset( $most_recent_history_event['event'] ) ) {
-			return false;
-		}
-
-		$akismet_history_events = array(
-			'check-error',
-			'cron-retry-ham',
-			'cron-retry-spam',
-			'check-ham',
-			'check-spam',
-			'recheck-error',
-			'recheck-ham',
-			'recheck-spam',
-			'webhook-ham',
-			'webhook-spam',
-		);
-
-		if ( in_array( $most_recent_history_event['event'], $akismet_history_events ) ) {
-			return true;
-		}
-
-		return false;
 	}
 }
